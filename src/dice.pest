@@ -1,0 +1,41 @@
+// !ANY | EOI is a hack to get the error reporting associated with EOI
+// without ever getting an EOI token
+Expression = { SOI ~ Expr ~ (!ANY | EOI) }
+Expr       = { MinMaxTerm ~ (CompOp ~ MinMaxTerm)* }
+CompOp     = { ">" | "<" | ">=" | "<=" | "=" }
+MinMaxTerm = { AddTerm ~ (MinMaxOp ~ AddTerm)* }
+MinMaxOp   = { "v" | "^" }
+AddTerm    = { AddOp? ~ MulTerm ~ (AddOp ~ MulTerm)* }
+AddOp      = { "+" | "-" }
+MulTerm    = { Repeat ~ (MulOp ~ Repeat)* }
+// `//` is truncating division, `/v` is floor division (to -∞);
+// `/` is true division and `/^` is ceiling division (to +∞);
+// `%` is Euclidean modulo (always positive)
+MulOp  = { "*" | "/" | "//" | "/v" | "/^" | "%" }
+Repeat = { Atom ~ (Keep? ~ Atom)* }
+Keep   = { "k" ~ LowHigh ~ Atom }
+// parse low first, because high will always match due to the ? operator
+LowHigh        =  { "l" | "h"? }
+Atom           = _{ Number | "(" ~ Expr ~ ")" | DieRoll | VariadicCall | UnaryCall }
+VariadicCall   =  { VariadicFnName ~ "(" ~ Expr ~ ("," ~ Expr)* ~ ","? ~ ")" }
+VariadicFnName =  {
+    "min"
+  | "max"
+  | "avg"
+  | "equal"
+  | "sum"
+  | "pow"
+}
+UnaryCall      =  { UnaryFnName ~ "(" ~ Expr ~ ")" }
+UnaryFnName    =  {
+    "sqrt"
+  | "floor"
+  | "ceil"
+  | "round"
+  | "trunc"
+  | "abs"
+}
+Number         = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+DieRoll        =  { ^"d" ~ Atom }
+
+WHITESPACE = _{ " " }
