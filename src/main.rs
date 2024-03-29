@@ -1,9 +1,9 @@
-use std::env::args;
-
-use itertools::Itertools;
-use lowcharts::plot;
-
 fn main() {
+    use std::env::args;
+
+    use itertools::Itertools;
+    use lowcharts::plot;
+
     let input = args().nth(1).expect("missing input");
     let result = dice::parse(&input).unwrap();
     let mut result = result.eval().unwrap();
