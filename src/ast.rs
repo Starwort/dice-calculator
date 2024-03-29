@@ -2,15 +2,24 @@ use std::iter::once;
 
 use from_pest::{ConversionError, FromPest, Void};
 use itertools::Itertools;
+use num::pow::Pow;
+use num::{BigInt, Zero};
 use pest::iterators::Pairs;
 use pest::Parser;
 use pest_ast::FromPest;
 use pest_derive::Parser;
 
 use super::distribution::{Distribution, RepeatError};
-use crate::distribution::{DivideByZeroError, PowError, RollError, SqrtError, Value};
+use crate::distribution::{
+    Count,
+    DivideByZeroError,
+    PowError,
+    RollError,
+    SqrtError,
+    Value,
+};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Error {
     RepeatError(RepeatError),
     DivideByZero,
@@ -472,7 +481,7 @@ impl VariadicCall {
                 Ok(result)
             },
             VariadicFnName::Equal => {
-                let mut total_true_cases = 0;
+                let mut total_true_cases = Count::zero();
                 let first_arg = self.first_arg.eval()?;
                 let args = self
                     .args
@@ -480,14 +489,14 @@ impl VariadicCall {
                     .map(Expr::eval)
                     .collect::<Result<Vec<_>, _>>()?;
                 let total_cases = first_arg.count
-                    * args.iter().map(|arg| arg.count).product::<usize>();
+                    * args.iter().map(|arg| &arg.count).product::<Count>();
                 for (value, count) in first_arg.contents {
                     let mut true_cases = count;
                     for arg in &args {
                         if let Some(count) = arg.contents.get(&value) {
                             true_cases *= count;
                         } else {
-                            true_cases = 0;
+                            true_cases = Count::zero();
                             break;
                         }
                     }
@@ -495,8 +504,8 @@ impl VariadicCall {
                 }
                 Ok(Distribution::new(
                     [
-                        (Value::new(0, 1), total_cases - total_true_cases),
-                        (Value::new(1, 1), total_true_cases),
+                        (Value::zero(), &total_cases - &total_true_cases),
+                        (Value::new(1.into(), 1.into()), total_true_cases),
                     ]
                     .into(),
                     total_cases,
@@ -642,14 +651,14 @@ impl<'pest> FromPest<'pest> for Number {
                     Rule::Number => {
                         let decimal_repr = pest.next().unwrap().as_str();
                         if let Some((whole, frac)) = decimal_repr.split_once('.') {
-                            let whole = whole.parse::<isize>().unwrap();
+                            let whole = whole.parse::<BigInt>().unwrap();
                             #[allow(clippy::cast_possible_truncation)]
-                            let denom = 10_isize.pow(frac.len() as u32);
-                            let frac = frac.parse::<isize>().unwrap();
-                            Ok(Number(Value::new(whole * denom + frac, denom)))
+                            let denom = Pow::pow(&BigInt::from(10), frac.len());
+                            let frac = frac.parse::<BigInt>().unwrap();
+                            Ok(Number(Value::new(whole * &denom + frac, denom)))
                         } else {
-                            let whole = decimal_repr.parse::<isize>().unwrap();
-                            Ok(Number(Value::new(whole, 1)))
+                            let whole = decimal_repr.parse::<BigInt>().unwrap();
+                            Ok(Number(Value::new(whole, 1.into())))
                         }
                     },
                     _ => Err(ConversionError::NoMatch),
@@ -661,7 +670,7 @@ impl<'pest> FromPest<'pest> for Number {
 }
 impl Number {
     fn eval(&self) -> Distribution {
-        Distribution::from(self.0)
+        Distribution::from(self.0.clone())
     }
 }
 

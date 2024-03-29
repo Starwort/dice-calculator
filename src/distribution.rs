@@ -15,29 +15,39 @@ use std::ops::{
 };
 
 use itertools::Itertools;
+use num::pow::Pow;
 use num::rational::Ratio;
-use num::{Integer, Signed};
+use num::{range, BigInt, BigUint, Integer, Signed, ToPrimitive, Zero};
 
-pub type Value = Ratio<isize>;
+pub type Value = Ratio<BigInt>;
+pub type Count = BigUint;
+
+#[inline]
+fn uint(val: usize) -> BigUint {
+    BigUint::from(val)
+}
 
 #[derive(Debug, Clone)]
 pub struct Distribution {
-    pub contents: HashMap<Value, usize>,
-    pub count: usize,
+    pub contents: HashMap<Value, Count>,
+    pub count: Count,
 }
 impl From<isize> for Distribution {
     fn from(value: isize) -> Self {
-        Self::new([(Ratio::new(value, 1), 1)].into(), 1)
+        Self::new(
+            [(Ratio::new(value.into(), 1.into()), uint(1))].into(),
+            uint(1),
+        )
     }
 }
 impl From<Value> for Distribution {
     fn from(value: Value) -> Self {
-        Self::new([(value, 1)].into(), 1)
+        Self::new([(value, uint(1))].into(), uint(1))
     }
 }
 impl Sum for Distribution {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(Self::new(HashMap::new(), 0), Add::add)
+        iter.fold(Self::new(HashMap::new(), Count::zero()), Add::add)
     }
 }
 impl Add<Distribution> for Distribution {
@@ -73,10 +83,11 @@ impl Add<&Distribution> for &Distribution {
         }
         for (lhs, lhs_count) in &self.contents {
             for (rhs, rhs_count) in &rhs.contents {
-                *result.entry(lhs + rhs).or_insert(0) += lhs_count * rhs_count;
+                *result.entry(lhs + rhs).or_insert(Count::zero()) +=
+                    lhs_count * rhs_count;
             }
         }
-        Distribution::new(result, self.count * rhs.count)
+        Distribution::new(result, &self.count * &rhs.count)
     }
 }
 impl AddAssign<Distribution> for Distribution {
@@ -93,11 +104,12 @@ impl AddAssign<&Distribution> for Distribution {
         let mut result = HashMap::new();
         for (lhs, lhs_count) in &self.contents {
             for (rhs, rhs_count) in &rhs.contents {
-                *result.entry(lhs + rhs).or_insert(0) += lhs_count * rhs_count;
+                *result.entry(lhs + rhs).or_insert(Count::zero()) +=
+                    lhs_count * rhs_count;
             }
         }
         self.contents = result;
-        self.count *= rhs.count;
+        self.count *= &rhs.count;
     }
 }
 impl Sub<Distribution> for Distribution {
@@ -133,14 +145,15 @@ impl SubAssign<&Distribution> for Distribution {
             *self = Self::empty();
             return;
         }
-        let mut resul = HashMap::new();
+        let mut result = HashMap::new();
         for (lhs, lhs_count) in &self.contents {
             for (rhs, rhs_count) in &rhs.contents {
-                *resul.entry(lhs - rhs).or_insert(0) += lhs_count * rhs_count;
+                *result.entry(lhs - rhs).or_insert(Count::zero()) +=
+                    lhs_count * rhs_count;
             }
         }
-        self.contents = resul;
-        self.count *= rhs.count;
+        self.contents = result;
+        self.count *= &rhs.count;
     }
 }
 impl Sub<&Distribution> for &Distribution {
@@ -153,10 +166,11 @@ impl Sub<&Distribution> for &Distribution {
         let mut result = HashMap::new();
         for (lhs, lhs_count) in &self.contents {
             for (rhs, rhs_count) in &rhs.contents {
-                *result.entry(lhs - rhs).or_insert(0) += lhs_count * rhs_count;
+                *result.entry(lhs - rhs).or_insert(Count::zero()) +=
+                    lhs_count * rhs_count;
             }
         }
-        Distribution::new(result, self.count * rhs.count)
+        Distribution::new(result, &self.count * &rhs.count)
     }
 }
 impl Mul<Distribution> for Distribution {
@@ -188,11 +202,12 @@ impl MulAssign<&Distribution> for Distribution {
             let mut result = HashMap::new();
             for (lhs, lhs_count) in &self.contents {
                 for (rhs, rhs_count) in &rhs.contents {
-                    *result.entry(lhs + rhs).or_insert(0) += lhs_count * rhs_count;
+                    *result.entry(lhs + rhs).or_insert(Count::zero()) +=
+                        lhs_count * rhs_count;
                 }
             }
             self.contents = result;
-            self.count *= rhs.count;
+            self.count *= &rhs.count;
         }
     }
 }
@@ -213,10 +228,11 @@ impl Mul<&Distribution> for &Distribution {
         }
         for (lhs, lhs_count) in &self.contents {
             for (rhs, rhs_count) in &rhs.contents {
-                *result.entry(lhs + rhs).or_insert(0) += lhs_count * rhs_count;
+                *result.entry(lhs + rhs).or_insert(Count::zero()) +=
+                    lhs_count * rhs_count;
             }
         }
-        Distribution::new(result, self.count * rhs.count)
+        Distribution::new(result, &self.count * &rhs.count)
     }
 }
 
@@ -254,10 +270,13 @@ impl BitOr<&Distribution> for &Distribution {
             return self.clone();
         }
         let mut result = self.clone();
-        for (&entry, count) in &rhs.contents {
-            *result.contents.entry(entry).or_insert(0) += count;
+        for (entry, count) in &rhs.contents {
+            *result
+                .contents
+                .entry(entry.clone())
+                .or_insert(Count::zero()) += count;
         }
-        result.count += rhs.count;
+        result.count += &rhs.count;
         result
     }
 }
@@ -279,9 +298,9 @@ impl BitOrAssign<&Distribution> for Distribution {
             return;
         }
         for (result, count) in &rhs.contents {
-            *self.contents.entry(*result).or_insert(0) += count;
+            *self.contents.entry(result.clone()).or_insert(Count::zero()) += count;
         }
-        self.count += rhs.count;
+        self.count += &rhs.count;
     }
 }
 impl Neg for Distribution {
@@ -294,8 +313,8 @@ impl Neg for Distribution {
 }
 
 impl Distribution {
-    pub fn new(contents: HashMap<Value, usize>, total_size: usize) -> Self {
-        debug_assert_eq!(contents.values().sum::<usize>(), total_size);
+    pub fn new(contents: HashMap<Value, Count>, total_size: Count) -> Self {
+        debug_assert_eq!(contents.values().sum::<Count>(), total_size);
         Self {
             contents,
             count: total_size,
@@ -305,38 +324,46 @@ impl Distribution {
     pub fn empty() -> Self {
         Self {
             contents: HashMap::new(),
-            count: 0,
+            count: Count::zero(),
         }
     }
 
-    pub fn into_raw(self) -> (Vec<(Value, usize)>, usize) {
+    pub fn into_raw(self) -> (Vec<(Value, Count)>, Count) {
         let mut contents = self.contents.into_iter().collect_vec();
-        contents.sort_unstable_by_key(|(k, _)| *k);
+        contents.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
         (contents, self.count)
+    }
+
+    pub fn into_approximate(self) -> Vec<(Value, f64)> {
+        let total = self.count.to_f64().unwrap();
+        let mut result = self
+            .contents
+            .into_iter()
+            .map(|(k, v)| (k, v.to_f64().unwrap() / total))
+            .collect_vec();
+        result.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+        result
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum RollError {
     NonPositive(Value),
     FractionalSides(Value),
 }
 
 impl Distribution {
-    fn roll_die(sides: Value, scale: usize) -> Result<Self, RollError> {
-        if sides <= Ratio::new(0, 1) {
-            return Err(RollError::NonPositive(sides));
+    fn roll_die(sides: &Value, scale: &Count) -> Result<Self, RollError> {
+        if sides <= &Ratio::new(0.into(), 1.into()) {
+            return Err(RollError::NonPositive(sides.clone()));
         } else if !sides.is_integer() {
-            return Err(RollError::FractionalSides(sides));
+            return Err(RollError::FractionalSides(sides.clone()));
         }
         let mut result = Self::new(
-            (1..=(sides.to_integer()))
-                .map(|i| (Ratio::new(i, 1), 1))
+            range(1.into(), sides.to_integer() + 1)
+                .map(|i| (Value::new(i, 1.into()), uint(1)))
                 .collect(),
-            #[allow(clippy::cast_sign_loss)]
-            {
-                sides.to_integer() as usize
-            },
+            sides.to_integer().to_biguint().unwrap(),
         );
         result.scale_count(scale);
         Ok(result)
@@ -347,7 +374,7 @@ impl Distribution {
         if range.is_empty() {
             return Ok(result);
         }
-        for (&sides, &count) in &range.contents {
+        for (sides, count) in &range.contents {
             result |= Self::roll_die(sides, count)?;
         }
         result.simplify();
@@ -355,35 +382,37 @@ impl Distribution {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.count == 0
+        self.count == Count::zero()
     }
 
     pub fn simplify(&mut self) {
+        debug_assert_eq!(self.contents.values().sum::<Count>(), self.count);
         if self.is_empty() {
             return;
         }
-        let mut gcd = self.count;
-        self.contents.retain(|_, &mut v| {
-            if v == 0 {
+        let mut gcd = self.count.clone();
+        self.contents.retain(|_, v| {
+            if v == &Count::zero() {
                 false
             } else {
-                gcd = gcd.gcd(&v);
+                gcd = gcd.gcd(v);
                 true
             }
         });
-        if gcd != 1 {
-            self.contents.values_mut().for_each(|v| *v /= gcd);
+        if gcd != uint(1) {
+            self.contents.values_mut().for_each(|v| *v /= &gcd);
             self.count /= gcd;
         }
+        debug_assert_eq!(self.contents.values().sum::<Count>(), self.count);
     }
 
-    fn scale_count(&mut self, scale: usize) {
+    fn scale_count(&mut self, scale: &Count) {
         self.contents.values_mut().for_each(|v| *v *= scale);
         self.count *= scale;
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[allow(clippy::enum_variant_names)]
 pub enum RepeatError {
     FractionalRepeatCount(Value),
@@ -395,18 +424,18 @@ pub enum RepeatError {
 impl Distribution {
     fn repeat_once(
         &self,
-        times: Value,
-        scale: usize,
+        times: &Value,
+        scale: &Count,
     ) -> Result<Distribution, RepeatError> {
         if !times.is_integer() {
-            Err(RepeatError::FractionalRepeatCount(times))
-        } else if times < Ratio::new(0, 1) {
-            Err(RepeatError::NegativeRepeatCount(times))
-        } else if times == Ratio::new(0, 1) {
+            Err(RepeatError::FractionalRepeatCount(times.clone()))
+        } else if times < &Value::zero() {
+            Err(RepeatError::NegativeRepeatCount(times.clone()))
+        } else if times == &Value::zero() {
             Ok(Self::empty())
         } else {
             let mut result = self.clone();
-            for _ in 1..times.to_integer() {
+            for _ in range(1.into(), times.to_integer()) {
                 result += self;
             }
             result.scale_count(scale);
@@ -419,7 +448,7 @@ impl Distribution {
         if self.is_empty() || times.is_empty() {
             return Ok(result);
         }
-        for (&times_result, &times_count) in &times.contents {
+        for (times_result, times_count) in &times.contents {
             result |= self.repeat_once(times_result, times_count)?;
         }
         result.simplify();
@@ -428,36 +457,39 @@ impl Distribution {
 
     fn repeat_once_advantage(
         &self,
-        times: Value,
-        keep_highest: Value,
-        scale: usize,
+        times: &Value,
+        keep_highest: &Value,
+        scale: Count,
     ) -> Result<Distribution, RepeatError> {
         if !times.is_integer() {
-            return Err(RepeatError::FractionalRepeatCount(times));
-        } else if times < Ratio::new(0, 1) {
-            return Err(RepeatError::NegativeRepeatCount(times));
+            return Err(RepeatError::FractionalRepeatCount(times.clone()));
         }
+        let Some(times) = times.to_integer().to_biguint() else {
+            return Err(RepeatError::NegativeRepeatCount(times.clone()));
+        };
         if !keep_highest.is_integer() {
-            return Err(RepeatError::FractionalKeepCount(keep_highest));
-        } else if keep_highest < Ratio::new(0, 1) {
-            return Err(RepeatError::NegativeKeepCount(keep_highest));
+            return Err(RepeatError::FractionalKeepCount(keep_highest.clone()));
         }
-        #[allow(clippy::cast_sign_loss)]
-        let keep_highest = keep_highest.to_integer() as usize;
+        let keep_highest =
+            if let Some(keep_highest) = keep_highest.to_integer().to_biguint() {
+                keep_highest
+                    .try_into()
+                    .expect("keep_highest is ridiculously large")
+            } else {
+                return Err(RepeatError::NegativeKeepCount(keep_highest.clone()));
+            };
+
         let mut result = Self::empty();
-        for mut rolls in (0..times.to_integer())
+        for mut rolls in range(Count::zero(), times.clone())
             .map(|_| &self.contents)
             .multi_cartesian_product()
         {
-            let count = rolls.iter().map(|(_, &v)| v).product::<usize>();
+            let count = rolls.iter().map(|(_, v)| *v).product::<Count>();
             rolls.sort_unstable_by_key(|(k, _)| Reverse(*k));
             let value = rolls.into_iter().take(keep_highest).map(|(k, _)| k).sum();
-            *result.contents.entry(value).or_insert(0) += count;
+            *result.contents.entry(value).or_insert(Count::zero()) += count;
         }
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-        {
-            result.count = self.count.pow(times.to_integer() as u32) * scale;
-        }
+        result.count = Pow::pow(&self.count, times) * scale;
         Ok(result)
     }
 
@@ -470,8 +502,8 @@ impl Distribution {
         if self.is_empty() || times.is_empty() || keep_highest.is_empty() {
             return Ok(result);
         }
-        for (&times_result, &times_count) in &times.contents {
-            for (&keep_result, &keep_count) in &keep_highest.contents {
+        for (times_result, times_count) in &times.contents {
+            for (keep_result, keep_count) in &keep_highest.contents {
                 result |= self.repeat_once_advantage(
                     times_result,
                     keep_result,
@@ -485,36 +517,39 @@ impl Distribution {
 
     fn repeat_once_disadvantage(
         &self,
-        times: Value,
-        keep_lowest: Value,
-        scale: usize,
+        times: &Value,
+        keep_lowest: &Value,
+        scale: Count,
     ) -> Result<Distribution, RepeatError> {
         if !times.is_integer() {
-            return Err(RepeatError::FractionalRepeatCount(times));
-        } else if times < Ratio::new(0, 1) {
-            return Err(RepeatError::NegativeRepeatCount(times));
+            return Err(RepeatError::FractionalRepeatCount(times.clone()));
         }
+        let Some(times) = times.to_integer().to_biguint() else {
+            return Err(RepeatError::NegativeRepeatCount(times.clone()));
+        };
         if !keep_lowest.is_integer() {
-            return Err(RepeatError::FractionalKeepCount(keep_lowest));
-        } else if keep_lowest < Ratio::new(0, 1) {
-            return Err(RepeatError::NegativeKeepCount(keep_lowest));
+            return Err(RepeatError::FractionalKeepCount(keep_lowest.clone()));
         }
-        #[allow(clippy::cast_sign_loss)]
-        let keep_lowest = keep_lowest.to_integer() as usize;
+        let keep_lowest =
+            if let Some(keep_lowest) = keep_lowest.to_integer().to_biguint() {
+                keep_lowest
+                    .try_into()
+                    .expect("keep_lowest is ridiculously large")
+            } else {
+                return Err(RepeatError::NegativeKeepCount(keep_lowest.clone()));
+            };
+
         let mut result = Self::empty();
-        for mut rolls in (0..times.to_integer())
+        for mut rolls in range(Count::zero(), times.clone())
             .map(|_| &self.contents)
             .multi_cartesian_product()
         {
-            let count = rolls.iter().map(|(_, &v)| v).product::<usize>();
+            let count = rolls.iter().map(|(_, v)| *v).product::<Count>();
             rolls.sort_unstable_by_key(|(k, _)| *k);
             let value = rolls.into_iter().take(keep_lowest).map(|(k, _)| k).sum();
-            *result.contents.entry(value).or_insert(0) += count;
+            *result.contents.entry(value).or_insert(Count::zero()) += count;
         }
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-        {
-            result.count = self.count.pow(times.to_integer() as u32) * scale;
-        }
+        result.count = Pow::pow(&self.count, times) * scale;
         Ok(result)
     }
 
@@ -527,8 +562,8 @@ impl Distribution {
         if self.is_empty() || times.is_empty() || keep_lowest.is_empty() {
             return Ok(result);
         }
-        for (&times_result, &times_count) in &times.contents {
-            for (&keep_result, &keep_count) in &keep_lowest.contents {
+        for (times_result, times_count) in &times.contents {
+            for (keep_result, keep_count) in &keep_lowest.contents {
                 result |= self.repeat_once_disadvantage(
                     times_result,
                     keep_result,
@@ -540,36 +575,36 @@ impl Distribution {
         Ok(result)
     }
 
-    pub fn max(a: &Self, b: &Self) -> Self {
-        if a.is_empty() || b.is_empty() {
+    pub fn max(lhs: &Self, rhs: &Self) -> Self {
+        if lhs.is_empty() || rhs.is_empty() {
             return Self::empty();
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &a.contents {
-            for (&b_result, &b_count) in &b.contents {
-                *new_distribution
-                    .entry(Value::max(result, b_result))
-                    .or_insert(0) += count * b_count;
+        let mut result = HashMap::new();
+        for (lhs, lhs_count) in &lhs.contents {
+            for (rhs, rhs_count) in &rhs.contents {
+                *result
+                    .entry(Ord::max(lhs, rhs).clone())
+                    .or_insert(Count::zero()) += lhs_count * rhs_count;
             }
         }
-        let mut result = Self::new(new_distribution, a.count * b.count);
+        let mut result = Self::new(result, &lhs.count * &rhs.count);
         result.simplify();
         result
     }
 
-    pub fn min(a: &Self, b: &Self) -> Self {
-        if a.is_empty() || b.is_empty() {
+    pub fn min(lhs: &Self, rhs: &Self) -> Self {
+        if lhs.is_empty() || rhs.is_empty() {
             return Self::empty();
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &a.contents {
-            for (&b_result, &b_count) in &b.contents {
-                *new_distribution
-                    .entry(Value::min(result, b_result))
-                    .or_insert(0) += count * b_count;
+        let mut result = HashMap::new();
+        for (lhs, lhs_count) in &lhs.contents {
+            for (rhs, rhs_count) in &rhs.contents {
+                *result
+                    .entry(Ord::min(lhs, rhs).clone())
+                    .or_insert(Count::zero()) += lhs_count * rhs_count;
             }
         }
-        let mut result = Self::new(new_distribution, a.count * b.count);
+        let mut result = Self::new(result, &lhs.count * &rhs.count);
         result.simplify();
         result
     }
@@ -583,17 +618,17 @@ impl Distribution {
         if self.is_empty() || divisor.is_empty() {
             return Ok(Self::empty());
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            for (&divisor_result, &divisor_count) in &divisor.contents {
-                if divisor_result == Ratio::new(0, 1) {
+        let mut result = HashMap::new();
+        for (lhs, lhs_count) in &self.contents {
+            for (rhs, rhs_count) in &divisor.contents {
+                if rhs == &Value::zero() {
                     return Err(DivideByZeroError);
                 }
-                *new_distribution.entry(result / divisor_result).or_insert(0) +=
-                    count * divisor_count;
+                *result.entry(lhs / rhs).or_insert(Count::zero()) +=
+                    lhs_count * rhs_count;
             }
         }
-        let mut result = Self::new(new_distribution, self.count * divisor.count);
+        let mut result = Self::new(result, &self.count * &divisor.count);
         result.simplify();
         Ok(result)
     }
@@ -602,18 +637,17 @@ impl Distribution {
         if self.is_empty() || divisor.is_empty() {
             return Ok(Self::empty());
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            for (&divisor_result, &divisor_count) in &divisor.contents {
-                if divisor_result == Ratio::new(0, 1) {
+        let mut result = HashMap::new();
+        for (lhs, lhs_count) in &self.contents {
+            for (rhs, rhs_count) in &divisor.contents {
+                if rhs == &Value::zero() {
                     return Err(DivideByZeroError);
                 }
-                *new_distribution
-                    .entry((result / divisor_result).trunc())
-                    .or_insert(0) += count * divisor_count;
+                *result.entry((lhs / rhs).trunc()).or_insert(Count::zero()) +=
+                    lhs_count * rhs_count;
             }
         }
-        let mut result = Self::new(new_distribution, self.count * divisor.count);
+        let mut result = Self::new(result, &self.count * &divisor.count);
         result.simplify();
         Ok(result)
     }
@@ -622,18 +656,17 @@ impl Distribution {
         if self.is_empty() || divisor.is_empty() {
             return Ok(Self::empty());
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            for (&divisor_result, &divisor_count) in &divisor.contents {
-                if divisor_result == Ratio::new(0, 1) {
+        let mut result = HashMap::new();
+        for (lhs, lhs_count) in &self.contents {
+            for (rhs, rhs_count) in &divisor.contents {
+                if rhs == &Value::zero() {
                     return Err(DivideByZeroError);
                 }
-                *new_distribution
-                    .entry((result / divisor_result).floor())
-                    .or_insert(0) += count * divisor_count;
+                *result.entry((lhs / rhs).floor()).or_insert(Count::zero()) +=
+                    lhs_count * rhs_count;
             }
         }
-        let mut result = Self::new(new_distribution, self.count * divisor.count);
+        let mut result = Self::new(result, &self.count * &divisor.count);
         result.simplify();
         Ok(result)
     }
@@ -642,18 +675,17 @@ impl Distribution {
         if self.is_empty() || divisor.is_empty() {
             return Ok(Self::empty());
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            for (&divisor_result, &divisor_count) in &divisor.contents {
-                if divisor_result == Ratio::new(0, 1) {
+        let mut result = HashMap::new();
+        for (lhs, lhs_count) in &self.contents {
+            for (rhs, rhs_count) in &divisor.contents {
+                if rhs == &Value::zero() {
                     return Err(DivideByZeroError);
                 }
-                *new_distribution
-                    .entry((result / divisor_result).ceil())
-                    .or_insert(0) += count * divisor_count;
+                *result.entry((lhs / rhs).ceil()).or_insert(Count::zero()) +=
+                    lhs_count * rhs_count;
             }
         }
-        let mut result = Self::new(new_distribution, self.count * divisor.count);
+        let mut result = Self::new(result, &self.count * &divisor.count);
         result.simplify();
         Ok(result)
     }
@@ -662,25 +694,24 @@ impl Distribution {
         if self.is_empty() || divisor.is_empty() {
             return Ok(Self::empty());
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            for (&divisor_result, &divisor_count) in &divisor.contents {
-                if divisor_result == Ratio::new(0, 1) {
+        let mut result = HashMap::new();
+        for (lhs, lhs_count) in &self.contents {
+            for (rhs, rhs_count) in &divisor.contents {
+                if rhs == &Value::zero() {
                     return Err(DivideByZeroError);
                 }
-                let new_result = result % divisor_result;
-                *new_distribution
-                    .entry((new_result + divisor_result) % divisor_result)
-                    .or_insert(0) += count * divisor_count;
+                *result
+                    .entry((lhs % rhs + rhs) % rhs)
+                    .or_insert(Count::zero()) += lhs_count * rhs_count;
             }
         }
-        let mut result = Self::new(new_distribution, self.count * divisor.count);
+        let mut result = Self::new(result, &self.count * &divisor.count);
         result.simplify();
         Ok(result)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum PowError {
     DivideByZero,
     FractionalPower(Value),
@@ -698,25 +729,36 @@ impl Distribution {
             return Ok(Self::empty());
         }
         let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            for (&exponent_result, &exponent_count) in &exponent.contents {
-                if result == Ratio::new(0, 1) && exponent_result < Ratio::new(0, 1) {
+        for (lhs, count) in &self.contents {
+            for (rhs, exponent_count) in &exponent.contents {
+                if lhs == &Value::zero() && rhs < &Value::zero() {
                     return Err(PowError::DivideByZero);
-                } else if !exponent_result.is_integer() {
-                    return Err(PowError::FractionalPower(exponent_result));
+                } else if !rhs.is_integer() {
+                    return Err(PowError::FractionalPower(rhs.clone()));
                 }
-                *new_distribution
-                    .entry(result.pow(i32::try_from(exponent_result.to_integer())?))
-                    .or_insert(0) += count * exponent_count;
+                let rhs = rhs.to_integer();
+                let result = if rhs.is_negative() {
+                    Value::new(
+                        Pow::pow(lhs.denom(), (-&rhs).to_biguint().unwrap()),
+                        Pow::pow(lhs.numer(), (-rhs).to_biguint().unwrap()),
+                    )
+                } else {
+                    Value::new(
+                        Pow::pow(lhs.numer(), rhs.to_biguint().unwrap()),
+                        Pow::pow(lhs.denom(), rhs.to_biguint().unwrap()),
+                    )
+                };
+                *new_distribution.entry(result).or_insert(Count::zero()) +=
+                    count * exponent_count;
             }
         }
-        let mut result = Self::new(new_distribution, self.count * exponent.count);
+        let mut result = Self::new(new_distribution, &self.count * &exponent.count);
         result.simplify();
         Ok(result)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum SqrtError {
     IrrationalResult(Value),
     NegativeArgument(Value),
@@ -727,24 +769,18 @@ impl Distribution {
         if self.is_empty() {
             return Ok(Self::empty());
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            if result < Ratio::new(0, 1) {
-                return Err(SqrtError::NegativeArgument(result));
+        let mut result = HashMap::new();
+        for (arg, count) in &self.contents {
+            if arg.is_negative() {
+                return Err(SqrtError::NegativeArgument(arg.clone()));
             }
-            let sqrt = Value::new(
-                result
-                    .numer()
-                    .checked_isqrt()
-                    .ok_or(SqrtError::IrrationalResult(result))?,
-                result
-                    .denom()
-                    .checked_isqrt()
-                    .ok_or(SqrtError::IrrationalResult(result))?,
-            );
-            *new_distribution.entry(sqrt).or_insert(0) += count;
+            let sqrt = Value::new(arg.numer().sqrt(), arg.denom().sqrt());
+            if &(&sqrt * &sqrt) != arg {
+                return Err(SqrtError::IrrationalResult(arg.clone()));
+            }
+            *result.entry(sqrt).or_insert(Count::zero()) += count;
         }
-        let mut result = Self::new(new_distribution, self.count);
+        let mut result = Self::new(result, self.count.clone());
         result.simplify();
         Ok(result)
     }
@@ -753,11 +789,11 @@ impl Distribution {
         if self.is_empty() {
             return Self::empty();
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            *new_distribution.entry(result.floor()).or_insert(0) += count;
+        let mut result = HashMap::new();
+        for (arg, count) in &self.contents {
+            *result.entry(arg.floor()).or_insert(Count::zero()) += count;
         }
-        let mut result = Self::new(new_distribution, self.count);
+        let mut result = Self::new(result, self.count.clone());
         result.simplify();
         result
     }
@@ -766,11 +802,11 @@ impl Distribution {
         if self.is_empty() {
             return Self::empty();
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            *new_distribution.entry(result.ceil()).or_insert(0) += count;
+        let mut result = HashMap::new();
+        for (arg, count) in &self.contents {
+            *result.entry(arg.ceil()).or_insert(Count::zero()) += count;
         }
-        let mut result = Self::new(new_distribution, self.count);
+        let mut result = Self::new(result, self.count.clone());
         result.simplify();
         result
     }
@@ -779,11 +815,11 @@ impl Distribution {
         if self.is_empty() {
             return Self::empty();
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            *new_distribution.entry(result.round()).or_insert(0) += count;
+        let mut result = HashMap::new();
+        for (arg, count) in &self.contents {
+            *result.entry(arg.round()).or_insert(Count::zero()) += count;
         }
-        let mut result = Self::new(new_distribution, self.count);
+        let mut result = Self::new(result, self.count.clone());
         result.simplify();
         result
     }
@@ -792,11 +828,11 @@ impl Distribution {
         if self.is_empty() {
             return Self::empty();
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            *new_distribution.entry(result.trunc()).or_insert(0) += count;
+        let mut result = HashMap::new();
+        for (arg, count) in &self.contents {
+            *result.entry(arg.trunc()).or_insert(Count::zero()) += count;
         }
-        let mut result = Self::new(new_distribution, self.count);
+        let mut result = Self::new(result, self.count.clone());
         result.simplify();
         result
     }
@@ -805,11 +841,11 @@ impl Distribution {
         if self.is_empty() {
             return Self::empty();
         }
-        let mut new_distribution = HashMap::new();
-        for (&result, &count) in &self.contents {
-            *new_distribution.entry(result.abs()).or_insert(0) += count;
+        let mut result = HashMap::new();
+        for (arg, count) in &self.contents {
+            *result.entry(arg.abs()).or_insert(Count::zero()) += count;
         }
-        let mut result = Self::new(new_distribution, self.count);
+        let mut result = Self::new(result, self.count.clone());
         result.simplify();
         result
     }
@@ -820,32 +856,33 @@ impl Distribution {
         if self.is_empty() || rhs.is_empty() {
             return Self::empty();
         }
-        let mut true_values = 0;
-        let mut false_values = 0;
-        for (&result, &count) in &self.contents {
-            for (&rhs_result, &rhs_count) in &rhs.contents {
-                if result < rhs_result {
-                    true_values += count * rhs_count;
+        let mut true_values = Count::zero();
+        let mut false_values = Count::zero();
+        for (lhs, lhs_count) in &self.contents {
+            for (rhs, rhs_count) in &rhs.contents {
+                if lhs < rhs {
+                    true_values += lhs_count * rhs_count;
                 } else {
-                    false_values += count * rhs_count;
+                    false_values += lhs_count * rhs_count;
                 }
             }
         }
-        if true_values == 0 {
+        if true_values.is_zero() {
             Self::from(0)
-        } else if false_values == 0 {
+        } else if false_values.is_zero() {
             Self::from(1)
         } else {
             let gcd = true_values.gcd(&false_values);
-            let true_values = true_values / gcd;
+            let true_values = true_values / &gcd;
             let false_values = false_values / gcd;
+            let total = &true_values + &false_values;
             Self::new(
                 [
-                    (Ratio::new(0, 1), false_values),
-                    (Ratio::new(1, 1), true_values),
+                    (Value::zero(), false_values),
+                    (Value::new(1.into(), 1.into()), true_values),
                 ]
                 .into(),
-                true_values + false_values,
+                total,
             )
         }
     }
@@ -854,32 +891,33 @@ impl Distribution {
         if self.is_empty() || rhs.is_empty() {
             return Self::empty();
         }
-        let mut true_values = 0;
-        let mut false_values = 0;
-        for (&result, &count) in &self.contents {
-            for (&rhs_result, &rhs_count) in &rhs.contents {
-                if result <= rhs_result {
-                    true_values += count * rhs_count;
+        let mut true_values = Count::zero();
+        let mut false_values = Count::zero();
+        for (lhs, lhs_count) in &self.contents {
+            for (rhs, rhs_count) in &rhs.contents {
+                if lhs <= rhs {
+                    true_values += lhs_count * rhs_count;
                 } else {
-                    false_values += count * rhs_count;
+                    false_values += lhs_count * rhs_count;
                 }
             }
         }
-        if true_values == 0 {
+        if true_values.is_zero() {
             Self::from(0)
-        } else if false_values == 0 {
+        } else if false_values.is_zero() {
             Self::from(1)
         } else {
             let gcd = true_values.gcd(&false_values);
-            let true_values = true_values / gcd;
+            let true_values = true_values / &gcd;
             let false_values = false_values / gcd;
+            let total = &true_values + &false_values;
             Self::new(
                 [
-                    (Ratio::new(0, 1), false_values),
-                    (Ratio::new(1, 1), true_values),
+                    (Value::zero(), false_values),
+                    (Value::new(1.into(), 1.into()), true_values),
                 ]
                 .into(),
-                true_values + false_values,
+                total,
             )
         }
     }
@@ -888,32 +926,33 @@ impl Distribution {
         if self.is_empty() || rhs.is_empty() {
             return Self::empty();
         }
-        let mut true_values = 0;
-        let mut false_values = 0;
-        for (&result, &count) in &self.contents {
-            for (&rhs_result, &rhs_count) in &rhs.contents {
-                if result > rhs_result {
-                    true_values += count * rhs_count;
+        let mut true_values = Count::zero();
+        let mut false_values = Count::zero();
+        for (lhs, lhs_count) in &self.contents {
+            for (rhs, rhs_count) in &rhs.contents {
+                if lhs > rhs {
+                    true_values += lhs_count * rhs_count;
                 } else {
-                    false_values += count * rhs_count;
+                    false_values += lhs_count * rhs_count;
                 }
             }
         }
-        if true_values == 0 {
+        if true_values.is_zero() {
             Self::from(0)
-        } else if false_values == 0 {
+        } else if false_values.is_zero() {
             Self::from(1)
         } else {
             let gcd = true_values.gcd(&false_values);
-            let true_values = true_values / gcd;
+            let true_values = true_values / &gcd;
             let false_values = false_values / gcd;
+            let total = &true_values + &false_values;
             Self::new(
                 [
-                    (Ratio::new(0, 1), false_values),
-                    (Ratio::new(1, 1), true_values),
+                    (Value::zero(), false_values),
+                    (Value::new(1.into(), 1.into()), true_values),
                 ]
                 .into(),
-                true_values + false_values,
+                total,
             )
         }
     }
@@ -922,32 +961,33 @@ impl Distribution {
         if self.is_empty() || rhs.is_empty() {
             return Self::empty();
         }
-        let mut true_values = 0;
-        let mut false_values = 0;
-        for (&result, &count) in &self.contents {
-            for (&rhs_result, &rhs_count) in &rhs.contents {
-                if result >= rhs_result {
-                    true_values += count * rhs_count;
+        let mut true_values = Count::zero();
+        let mut false_values = Count::zero();
+        for (lhs, lhs_count) in &self.contents {
+            for (rhs, rhs_count) in &rhs.contents {
+                if lhs >= rhs {
+                    true_values += lhs_count * rhs_count;
                 } else {
-                    false_values += count * rhs_count;
+                    false_values += lhs_count * rhs_count;
                 }
             }
         }
-        if true_values == 0 {
+        if true_values.is_zero() {
             Self::from(0)
-        } else if false_values == 0 {
+        } else if false_values.is_zero() {
             Self::from(1)
         } else {
             let gcd = true_values.gcd(&false_values);
-            let true_values = true_values / gcd;
+            let true_values = true_values / &gcd;
             let false_values = false_values / gcd;
+            let total = &true_values + &false_values;
             Self::new(
                 [
-                    (Ratio::new(0, 1), false_values),
-                    (Ratio::new(1, 1), true_values),
+                    (Value::zero(), false_values),
+                    (Value::new(1.into(), 1.into()), true_values),
                 ]
                 .into(),
-                true_values + false_values,
+                total,
             )
         }
     }
@@ -956,32 +996,33 @@ impl Distribution {
         if self.is_empty() || rhs.is_empty() {
             return Self::empty();
         }
-        let mut true_values = 0;
-        let mut false_values = 0;
-        for (&result, &count) in &self.contents {
-            for (&rhs_result, &rhs_count) in &rhs.contents {
-                if result == rhs_result {
-                    true_values += count * rhs_count;
+        let mut true_values = Count::zero();
+        let mut false_values = Count::zero();
+        for (lhs, lhs_count) in &self.contents {
+            for (rhs, rhs_count) in &rhs.contents {
+                if lhs == rhs {
+                    true_values += lhs_count * rhs_count;
                 } else {
-                    false_values += count * rhs_count;
+                    false_values += lhs_count * rhs_count;
                 }
             }
         }
-        if true_values == 0 {
+        if true_values.is_zero() {
             Self::from(0)
-        } else if false_values == 0 {
+        } else if false_values.is_zero() {
             Self::from(1)
         } else {
             let gcd = true_values.gcd(&false_values);
-            let true_values = true_values / gcd;
+            let true_values = true_values / &gcd;
             let false_values = false_values / gcd;
+            let total = &true_values + &false_values;
             Self::new(
                 [
-                    (Ratio::new(0, 1), false_values),
-                    (Ratio::new(1, 1), true_values),
+                    (Value::zero(), false_values),
+                    (Value::new(1.into(), 1.into()), true_values),
                 ]
                 .into(),
-                true_values + false_values,
+                total,
             )
         }
     }

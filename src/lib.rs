@@ -1,4 +1,3 @@
-#![feature(isqrt)]
 mod ast;
 mod distribution;
 
