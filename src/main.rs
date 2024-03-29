@@ -8,7 +8,7 @@ fn main() {
     let result = dice::parse(&input).unwrap();
     let mut result = result.eval().unwrap();
     result.simplify();
-    let (result, _) = dbg!(result).into_raw();
+    let (result, _) = result.into_raw();
     println!(
         "{}",
         plot::MatchBar::new(
